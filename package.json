@@ -1,0 +1,11 @@
+{
+  "name": "ddubii00-stock3",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

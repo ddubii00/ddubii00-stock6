@@ -450,6 +450,8 @@ const server = http.createServer(async (req, res) => {
   send(res, 200, fs.readFileSync(file), type);
 });
 
-server.listen(PORT, () => {
-  console.log(`Server running at http://127.0.0.1:${PORT}`);
-});
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`Server running at http://127.0.0.1:${PORT}`);
+  });
+}
