@@ -276,15 +276,13 @@
         
         const chartContainer = document.getElementById('lwchart-' + key);
         chartContainer.style.position = 'relative';
+        chartContainer.style.backgroundColor = '#ffffff';
         let bgCanvas = chartContainer.querySelector('.bg-canvas');
         if (!bgCanvas) {
           bgCanvas = document.createElement('canvas');
           bgCanvas.className = 'bg-canvas';
-          bgCanvas.style.position = 'absolute';
-          bgCanvas.style.top = '0';
-          bgCanvas.style.left = '0';
-          bgCanvas.style.pointerEvents = 'none';
-          chartContainer.insertBefore(bgCanvas, chartContainer.firstChild);
+          bgCanvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2;';
+          chartContainer.appendChild(bgCanvas);
         }
         
         const drawBg = () => {
@@ -371,7 +369,7 @@
           tooltipEl.style.top = top + 'px';
         });
   
-        inst.chart.applyOptions({ layout: { backgroundColor: '#ffffff' } });
+        inst.chart.applyOptions({ layout: { backgroundColor: 'transparent' } });
 
         // Interval-aware tick formatting
         const intervalStep = inst.interval === '1mo' ? 6 : (inst.interval === '1wk' ? 3 : 1);
