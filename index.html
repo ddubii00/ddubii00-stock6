@@ -260,7 +260,8 @@
         const json = await res.json();
         if (!json?.ok || !json.series) throw new Error('no data');
         let series = json.series;
-        if (series.length > 700) series = series.slice(-700);
+        const requiredLength = inst.visibleCount + 250;
+        if (series.length > Math.max(1000, requiredLength)) series = series.slice(-Math.max(1000, requiredLength));
 
         const chartData = series.map(x => ({
           time: x.date,
@@ -304,14 +305,63 @@
           const startLogical = Math.max(0, Math.floor(logicalRange.from));
           const endLogical = Math.min(chartData.length - 1, Math.ceil(logicalRange.to));
           
+          let currentMacdSign = 0;
+          let startX = null;
+          
+          const drawMacdRect = (sign, xStart, xEnd) => {
+            if (sign === 1) ctx.fillStyle = 'rgba(255, 80, 80, 0.18)';
+            else if (sign === -1) ctx.fillStyle = 'rgba(60, 120, 255, 0.15)';
+            if (sign !== 0 && xStart !== null && xEnd !== null) {
+              ctx.fillRect(Math.floor(xStart), 0, Math.ceil(xEnd - xStart), height);
+            }
+          };
+          
           for (let i = startLogical; i <= endLogical; i++) {
-            let x1 = timeScale.logicalToCoordinate(i - 0.5);
-            let x2 = timeScale.logicalToCoordinate(i + 0.5);
-            if (x1 === null || x2 === null) continue;
+            let cx = timeScale.logicalToCoordinate(i);
+            if (cx === null) continue;
+            let nextCx = timeScale.logicalToCoordinate(i + 1);
+            let prevCx = timeScale.logicalToCoordinate(i - 1);
+            let hw = 3;
+            if (nextCx !== null) hw = (nextCx - cx) / 2;
+            else if (prevCx !== null) hw = (cx - prevCx) / 2;
+            
+            let x1 = cx - hw;
+            let x2 = cx + hw;
             
             const macd = ema12[i].value - ema26[i].value;
-            ctx.fillStyle = macd >= 0 ? 'rgba(255, 80, 80, 0.18)' : 'rgba(60, 120, 255, 0.15)';
-            ctx.fillRect(Math.floor(x1), 0, Math.ceil(x2 - x1), height);
+            let sign = macd > 0 ? 1 : (macd < 0 ? -1 : 0);
+            
+            if (sign !== currentMacdSign) {
+              if (currentMacdSign !== 0 && startX !== null) {
+                drawMacdRect(currentMacdSign, startX, x1);
+              }
+              currentMacdSign = sign;
+              startX = x1;
+            }
+            
+            if (inst.interval && inst.interval.endsWith('m') && i > 0 && typeof chartData[i].time === 'number') {
+              const dCur = new Date(chartData[i].time * 1000).getUTCDate();
+              const dPrev = new Date(chartData[i-1].time * 1000).getUTCDate();
+              if (dCur !== dPrev) {
+                ctx.beginPath();
+                ctx.setLineDash([2, 4]);
+                ctx.moveTo(cx, 0);
+                ctx.lineTo(cx, height);
+                ctx.strokeStyle = '#6ba3ff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                ctx.setLineDash([]);
+              }
+            }
+          }
+          
+          if (currentMacdSign !== 0 && startX !== null) {
+             let lastCx = timeScale.logicalToCoordinate(endLogical);
+             let hw = 3;
+             let prevCx = timeScale.logicalToCoordinate(endLogical - 1);
+             if (prevCx !== null && lastCx !== null) hw = (lastCx - prevCx) / 2;
+             let x2 = (lastCx !== null) ? lastCx + hw : startX + hw*2;
+             drawMacdRect(currentMacdSign, startX, x2);
           }
         };
         
@@ -327,7 +377,7 @@
         if (!tooltipEl) {
           tooltipEl = document.createElement('div');
           tooltipEl.className = 'lw-tooltip';
-          tooltipEl.style.cssText = 'position:absolute;z-index:50;pointer-events:none;display:none;padding:8px 12px;border-radius:8px;font-size:12px;line-height:1.5;background:rgba(20,20,35,0.92);color:#fff;box-shadow:0 4px 16px rgba(0,0,0,0.25);white-space:nowrap;backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,0.1);';
+          tooltipEl.style.cssText = 'position:absolute;z-index:50;pointer-events:none;display:none;padding:4px 6px;border-radius:6px;font-size:11px;line-height:1.1;background:rgba(255,255,255,0.92);color:#333;box-shadow:0 4px 12px rgba(0,0,0,0.15);white-space:nowrap;backdrop-filter:blur(6px);border:1px solid rgba(0,0,0,0.1);';
           chartContainer.appendChild(tooltipEl);
         }
         inst.chart.subscribeCrosshairMove((param) => {
@@ -346,12 +396,26 @@
           const sign = pctChange >= 0 ? '+' : '';
           const color = pctChange > 0 ? '#ff6b6b' : pctChange < 0 ? '#6ba3ff' : '#aaa';
           const arrow = pctChange > 0 ? '▲' : pctChange < 0 ? '▼' : '─';
-          // Format date
           let dateStr = '';
           if (typeof param.time === 'string') { dateStr = param.time; }
           else if (param.time.year) { dateStr = `${param.time.year}-${String(param.time.month).padStart(2,'0')}-${String(param.time.day).padStart(2,'0')}`; }
-          else { dateStr = new Date(param.time * 1000).toISOString().slice(0,10); }
-          tooltipEl.innerHTML = `<div style="font-weight:700;margin-bottom:3px;color:#ddd;">${dateStr}</div><div>시가: <span style="font-weight:600;">${openVal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div><div>종가: <span style="font-weight:600;">${closeVal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div><div style="margin-top:4px;font-weight:800;font-size:13px;color:${color};">${arrow} ${sign}${pctChange.toFixed(2)}%</div>`;
+          else { 
+             const d = new Date(param.time * 1000);
+             dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`;
+          }
+          
+          let maHtml = '';
+          if (inst.smaDataMap) {
+            const getMa = (p) => {
+               const val = param.seriesPrices.get(inst.maSeries[p]);
+               return val ? Number(val).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '-';
+            };
+            maHtml = `<div style="margin-top:2px;font-size:10px;color:#555;border-top:1px solid rgba(0,0,0,0.1);padding-top:2px;">5일: ${getMa(5)} &nbsp;&nbsp; 20일: ${getMa(20)}<br/>10일: ${getMa(10)} &nbsp;&nbsp; 60일: ${getMa(60)}</div>`;
+          }
+
+          const candleColor = closeVal >= openVal ? '#e53935' : '#1e88e5'; // Adjusted for white background
+
+          tooltipEl.innerHTML = `<div style="color:${candleColor};font-size:13px;margin-bottom:1px;">시가: <span style="font-weight:700;">${openVal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span> &nbsp;&nbsp; 종가: <span style="font-weight:700;">${closeVal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div><div style="font-weight:800;font-size:13px;color:${color};margin-bottom:1px;">${arrow} ${sign}${pctChange.toFixed(2)}%</div>${maHtml}`;
           tooltipEl.style.display = 'block';
           // Position tooltip near crosshair
           const x = param.point ? param.point.x : 0;
@@ -391,10 +455,40 @@
           }
         });
 
+        inst.smaDataMap = {};
         [5, 10, 20, 60, 120, 240].forEach(p => {
           const smaData = calculateSMA(chartData, p);
           inst.maSeries[p].setData(smaData);
+          inst.smaDataMap[p] = smaData;
         });
+
+        // MA Cross Logic
+        const markers = [];
+        const ma5 = inst.smaDataMap[5];
+        const ma20 = inst.smaDataMap[20];
+        const ma60 = inst.smaDataMap[60];
+        for (let i = 1; i < chartData.length; i++) {
+          const t = chartData[i].time;
+          
+          const checkCross = (fast, slow, text) => {
+             if (fast[i] && slow[i] && fast[i-1] && slow[i-1]) {
+                const prevFast = fast[i-1].value;
+                const prevSlow = slow[i-1].value;
+                const curFast = fast[i].value;
+                const curSlow = slow[i].value;
+                if (prevFast <= prevSlow && curFast > curSlow) {
+                   markers.push({ time: t, position: 'belowBar', color: '#d92c2c', shape: 'circle', text: text });
+                } else if (prevFast >= prevSlow && curFast < curSlow) {
+                   markers.push({ time: t, position: 'aboveBar', color: '#1f5bd8', shape: 'circle', text: text });
+                }
+             }
+          };
+          
+          checkCross(ma5, ma20, '5/20');
+          checkCross(ma5, ma60, '5/60');
+          checkCross(ma20, ma60, '20/60');
+        }
+        inst.candleSeries.setMarkers(markers);
 
         if (chartData.length > 0) {
           const to = chartData.length - 1;
@@ -471,7 +565,17 @@
               </div>
             </div>
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
-              <div style="display:flex;gap:4px;">
+              <div style="display:flex;gap:4px;align-items:center;">
+                <select id="min-${item.popupKey}" disabled style="border:1px solid var(--line);border-radius:4px;padding:2px 4px;margin-right:8px;font-size:13px;">
+                  <option value="1">1분</option>
+                  <option value="3">3분</option>
+                  <option value="5">5분</option>
+                  <option value="10">10분</option>
+                  <option value="30">30분</option>
+                  <option value="60">60분</option>
+                  <option value="120">120분</option>
+                </select>
+                <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="minute">분봉</button>
                 <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1d" style="background:var(--accent);color:#fff;">일봉</button>
                 <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1wk">주봉</button>
                 <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1mo">월봉</button>
@@ -499,13 +603,28 @@
           
           // Interval buttons
           const btns = div.querySelectorAll('.tf-btn');
+          const minInput = div.querySelector(`#min-${item.popupKey}`);
           btns.forEach(b => b.addEventListener('click', (e) => {
             btns.forEach(bb => { bb.style.background = '#e9f1ff'; bb.style.color = '#134db5'; });
             e.target.style.background = 'var(--accent)';
             e.target.style.color = '#fff';
-            lwChartInstances[item.popupKey].interval = e.target.getAttribute('data-tf');
+            const tf = e.target.getAttribute('data-tf');
+            if (tf === 'minute') {
+              minInput.disabled = false;
+              lwChartInstances[item.popupKey].interval = (minInput.value || 1) + 'm';
+            } else {
+              minInput.disabled = true;
+              lwChartInstances[item.popupKey].interval = tf;
+            }
             loadLwChart(item.popupKey);
           }));
+
+          minInput.addEventListener('change', (e) => {
+            if (!minInput.disabled) {
+              lwChartInstances[item.popupKey].interval = (e.target.value || 1) + 'm';
+              loadLwChart(item.popupKey);
+            }
+          });
 
           // Period input
           const inp = div.querySelector(`#period-${item.popupKey}`);
@@ -790,6 +909,17 @@
     if (location.protocol === 'file:') {
       document.getElementById('fileWarn').style.display = 'block';
     }
+    
+    // Auto-refresh minute charts every 60 seconds
+    setInterval(() => {
+      summaryItems.forEach(item => {
+        const inst = lwChartInstances[item.popupKey];
+        if (inst && inst.interval && inst.interval.endsWith('m')) {
+          loadLwChart(item.popupKey);
+        }
+      });
+    }, 60000);
+
     renderMiniChart('chart-us10y', 'US10Y');
     renderMiniChart('chart-us2y', 'US2Y');
     renderMiniChart('chart-usdkrw', 'USDKRW');

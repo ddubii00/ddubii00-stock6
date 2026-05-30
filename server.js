@@ -298,7 +298,24 @@ async function fetchChartSeries(key, interval = '1d') {
 
   if (yahooSymbols[key]) {
     const sym = yahooSymbols[key];
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=10y&interval=${interval}`;
+    let rangeStr = '10y';
+    let queryInterval = interval;
+    let targetMin = 0;
+    
+    if (interval.endsWith('m')) {
+      targetMin = parseInt(interval);
+      if (targetMin >= 60) {
+        queryInterval = '60m';
+        rangeStr = '1y'; // 1 year for 60m+
+      } else if (targetMin >= 5) {
+        queryInterval = '5m';
+        rangeStr = '60d'; // 60 days for 5m to 30m
+      } else {
+        queryInterval = '1m';
+        rangeStr = '7d';  // 7 days for 1m, 3m
+      }
+    }
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=${rangeStr}&interval=${queryInterval}`;
     const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     const json = await r.json();
     const result = json?.chart?.result?.[0];
@@ -310,6 +327,9 @@ async function fetchChartSeries(key, interval = '1d') {
     const closes = quotes.close || [];
     
     const rows = [];
+    let currentCandle = null;
+    let currentCandlePeriod = null;
+    
     for (let i = 0; i < ts.length; i += 1) {
       const open = Number(opens[i]);
       const high = Number(highs[i]);
@@ -317,10 +337,25 @@ async function fetchChartSeries(key, interval = '1d') {
       const close = Number(closes[i]);
       if (!Number.isFinite(close) || close <= 0) continue;
       
-      const dateObj = new Date(ts[i] * 1000);
-      let dateStr = dateObj.toISOString().slice(0, 10);
-      rows.push({ date: dateStr, open, high, low, close });
+      if (targetMin > 0) {
+        // Aggregate 1m candles into targetMin candles
+        let periodStart = Math.floor(ts[i] / (targetMin * 60)) * (targetMin * 60);
+        if (!currentCandle || currentCandlePeriod !== periodStart) {
+          if (currentCandle) rows.push(currentCandle);
+          currentCandlePeriod = periodStart;
+          currentCandle = { date: periodStart + (9 * 3600), open, high, low, close };
+        } else {
+          currentCandle.high = Math.max(currentCandle.high, high);
+          currentCandle.low = Math.min(currentCandle.low, low);
+          currentCandle.close = close;
+        }
+      } else {
+        const dateObj = new Date(ts[i] * 1000);
+        let dateStr = dateObj.toISOString().slice(0, 10);
+        rows.push({ date: dateStr, open, high, low, close });
+      }
     }
+    if (currentCandle) rows.push(currentCandle);
     if (!rows.length) return null;
     return rows.slice(-1500); // 넉넉하게 1500개 전달 (프론트에서 700개 등 사용)
   }
