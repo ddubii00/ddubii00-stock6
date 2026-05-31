@@ -319,12 +319,66 @@ async function fetchChartSeries(key, interval = '1d') {
     const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     const json = await r.json();
     const result = json?.chart?.result?.[0];
-    const ts = result?.timestamp || [];
+    let ts = result?.timestamp || [];
     const quotes = result?.indicators?.quote?.[0] || {};
-    const opens = quotes.open || [];
-    const highs = quotes.high || [];
-    const lows = quotes.low || [];
-    const closes = quotes.close || [];
+    let opens = quotes.open || [];
+    let highs = quotes.high || [];
+    let lows = quotes.low || [];
+    let closes = quotes.close || [];
+
+    if ((key === 'KOSPI' || key === 'KOSDAQ') && targetMin > 0) {
+      try {
+        const dUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=${rangeStr}&interval=1d`;
+        const dRes = await fetch(dUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const dJson = await dRes.json();
+        const dTs = dJson?.chart?.result?.[0]?.timestamp || [];
+        const dCloses = dJson?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+        
+        let dailyCloses = {};
+        for (let j = 0; j < dTs.length; j++) {
+           if (dCloses[j]) {
+              let dDate = new Date(dTs[j] * 1000).toISOString().slice(0, 10);
+              dailyCloses[dDate] = dCloses[j];
+           }
+        }
+        
+        let appendedTs = [];
+        let appendedOpens = [];
+        let appendedHighs = [];
+        let appendedLows = [];
+        let appendedCloses = [];
+        const nowSec = Math.floor(Date.now() / 1000);
+
+        for (let i = 0; i < ts.length; i++) {
+           appendedTs.push(ts[i]);
+           appendedOpens.push(opens[i]);
+           appendedHighs.push(highs[i]);
+           appendedLows.push(lows[i]);
+           appendedCloses.push(closes[i]);
+           
+           let curDate = new Date(ts[i] * 1000).toISOString().slice(0, 10);
+           let nextDate = (i + 1 < ts.length) ? new Date(ts[i + 1] * 1000).toISOString().slice(0, 10) : null;
+           
+           if (curDate !== nextDate) {
+              let ts1530 = Math.floor(Date.parse(curDate + "T06:30:00Z") / 1000);
+              if (nowSec > ts1530 && dailyCloses[curDate] && ts[i] < ts1530) {
+                 appendedTs.push(ts1530);
+                 appendedOpens.push(closes[i]); 
+                 appendedHighs.push(Math.max(closes[i], dailyCloses[curDate]));
+                 appendedLows.push(Math.min(closes[i], dailyCloses[curDate]));
+                 appendedCloses.push(dailyCloses[curDate]);
+              }
+           }
+        }
+        ts = appendedTs;
+        opens = appendedOpens;
+        highs = appendedHighs;
+        lows = appendedLows;
+        closes = appendedCloses;
+      } catch (e) {
+        console.error("Failed to append KOSPI 15:30 candle", e);
+      }
+    }
     
     const rows = [];
     let currentCandle = null;
