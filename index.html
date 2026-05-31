@@ -413,9 +413,15 @@
             maHtml = `<div style="margin-top:2px;font-size:10px;color:#555;border-top:1px solid rgba(0,0,0,0.1);padding-top:2px;">5일: ${getMa(5)} &nbsp;&nbsp; 20일: ${getMa(20)}<br/>10일: ${getMa(10)} &nbsp;&nbsp; 60일: ${getMa(60)}</div>`;
           }
 
+
           const candleColor = closeVal >= openVal ? '#e53935' : '#1e88e5'; // Adjusted for white background
 
-          tooltipEl.innerHTML = `<div style="color:${candleColor};font-size:13px;margin-bottom:1px;">시가: <span style="font-weight:700;">${openVal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span> &nbsp;&nbsp; 종가: <span style="font-weight:700;">${closeVal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div><div style="font-weight:800;font-size:13px;color:${color};margin-bottom:1px;">${arrow} ${sign}${pctChange.toFixed(2)}%</div>${maHtml}`;
+          let dateHtml = '';
+          if (inst.interval.endsWith('m')) {
+            dateHtml = `<div style="font-weight:700;margin-bottom:2px;color:#333;font-size:12px;">${dateStr}</div>`;
+          }
+
+          tooltipEl.innerHTML = `${dateHtml}<div style="color:${candleColor};font-size:13px;margin-bottom:1px;">시가: <span style="font-weight:700;">${openVal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span> &nbsp;&nbsp; 종가: <span style="font-weight:700;">${closeVal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div><div style="font-weight:800;font-size:13px;color:${color};margin-bottom:1px;">${arrow} ${sign}${pctChange.toFixed(2)}%</div>${maHtml}`;
           tooltipEl.style.display = 'block';
           // Position tooltip near crosshair
           const x = param.point ? param.point.x : 0;
@@ -580,8 +586,10 @@
                 <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1wk">주봉</button>
                 <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1mo">월봉</button>
               </div>
-              <div style="display:flex;gap:4px;align-items:center;font-size:12px;color:var(--muted);">
-                조회기간: <input type="number" id="period-${item.popupKey}" value="120" style="width:50px;text-align:right;border:1px solid var(--line);border-radius:4px;padding:2px 4px;" />
+              <div style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);">
+                <span>조회기간: <input type="number" id="period-${item.popupKey}" value="120" style="width:50px;text-align:right;border:1px solid var(--line);border-radius:4px;padding:2px 4px;" /></span>
+                <span>최대: <input type="number" id="ymax-${item.popupKey}" placeholder="자동" style="width:60px;text-align:right;border:1px solid var(--line);border-radius:4px;padding:2px 4px;" /></span>
+                <span>최소: <input type="number" id="ymin-${item.popupKey}" placeholder="자동" style="width:60px;text-align:right;border:1px solid var(--line);border-radius:4px;padding:2px 4px;" /></span>
               </div>
             </div>
           </div>
@@ -635,6 +643,26 @@
               loadLwChart(item.popupKey);
             }
           });
+
+          // Y-axis manual scale
+          const updateYAxis = () => {
+            const ymaxInp = div.querySelector(`#ymax-${item.popupKey}`);
+            const yminInp = div.querySelector(`#ymin-${item.popupKey}`);
+            const ymax = parseFloat(ymaxInp.value);
+            const ymin = parseFloat(yminInp.value);
+            const inst = lwChartInstances[item.popupKey];
+            
+            const isManual = !isNaN(ymax) && !isNaN(ymin) && ymax > ymin;
+            const provider = isManual ? () => ({ priceRange: { minValue: ymin, maxValue: ymax } }) : null;
+            
+            inst.candleSeries.applyOptions({ autoscaleInfoProvider: provider });
+            Object.values(inst.maSeries).forEach(series => {
+              series.applyOptions({ autoscaleInfoProvider: isManual ? () => null : null });
+            });
+          };
+
+          div.querySelector(`#ymax-${item.popupKey}`).addEventListener('change', updateYAxis);
+          div.querySelector(`#ymin-${item.popupKey}`).addEventListener('change', updateYAxis);
 
           // Legend toggle
           const lgItems = div.querySelectorAll('.lg-item');
