@@ -441,22 +441,22 @@
   
         inst.chart.applyOptions({ layout: { backgroundColor: 'transparent' } });
 
-        // Interval-aware tick formatting
         const intervalStep = inst.interval === '1mo' ? 6 : (inst.interval === '1wk' ? 3 : 1);
-        const shownMonths = new Set();
         inst.chart.applyOptions({
           timeScale: {
+            timeVisible: inst.interval.endsWith('m'),
             tickMarkFormatter: (time) => {
+              if (inst.interval.endsWith('m')) {
+                const d = new Date(time * 1000);
+                return `${String(d.getUTCMonth() + 1).padStart(2, '0')}/${String(d.getUTCDate()).padStart(2, '0')} ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+              }
               let year, month;
               if (time.year) { year = time.year; month = time.month; }
               else if (typeof time === 'string') { year = parseInt(time.substring(0,4)); month = parseInt(time.substring(5,7)); }
               else { const d = new Date(time * 1000); year = d.getFullYear(); month = d.getMonth() + 1; }
               // Only show at interval boundaries
               if ((month - 1) % intervalStep !== 0) return '';
-              const label = year + '.' + String(month).padStart(2, '0');
-              if (shownMonths.has(label)) return '';
-              shownMonths.add(label);
-              return label;
+              return year + '.' + String(month).padStart(2, '0');
             }
           }
         });
