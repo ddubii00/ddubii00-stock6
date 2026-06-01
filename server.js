@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const sharedUtils = require('./utils');
 
 const PORT = 8000;
 const ROOT = __dirname;
@@ -446,7 +447,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const key = u.searchParams.get('key') || '';
       const interval = u.searchParams.get('interval') || '1d';
-      const rows = await fetchChartSeries(key, interval);
+      const rows = await sharedUtils.fetchChartSeries(key, interval);
       if (!rows) return send(res, 404, JSON.stringify({ ok: false, error: 'no data' }), 'application/json');
       return send(res, 200, JSON.stringify({ ok: true, series: rows }), 'application/json');
     } catch (e) {

@@ -55,9 +55,32 @@
       cursor: pointer; font-weight: 600;
     }
     .btn.outline { background: #e9f1ff; color: #134db5; }
-    .head-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
     .asof { color: var(--muted); font-size: 12px; margin: -2px 0 8px; }
     .memo { color: #4d5b78; font-size: 12px; line-height: 1.35; margin: -2px 0 8px; white-space: pre-line; }
+    .chart-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 100%; }
+    .chart-tools, .scale-tools {
+      display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; white-space: nowrap; max-width: 100%;
+      overflow-x: auto;
+    }
+    .chart-tools .btn { flex: 0 0 auto; padding: 8px 13px; }
+    .minute-select {
+      flex: 0 0 auto; border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px;
+      margin-right: 4px; font-size: 13px;
+    }
+    .market-status {
+      display: inline-flex; align-items: center; gap: 5px; width: fit-content;
+      margin-top: 2px; padding: 3px 8px; border-radius: 999px;
+      background: #eef3ff; color: #134db5; font-size: 12px; font-weight: 800;
+    }
+    .market-status.live { background: #fff1f1; color: #d92c2c; }
+    .market-status.closed { background: #eef1f5; color: #5f6b85; }
+    .section-head {
+      display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;
+      margin: 22px 0 10px;
+    }
+    .section-head h2 { margin: 0; font-size: 22px; letter-spacing: 0; }
+    .section-head p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.35; text-align: right; }
 
     .chart {
       width: 100%; height: 270px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
@@ -88,13 +111,15 @@
     @media (max-width: 980px) {
       .span-3, .span-4, .span-6, .span-8 { grid-column: span 12; }
       .chart { height: 240px; }
+      .head-row { flex-direction: column; }
+      .chart-controls { align-items: flex-start; width: 100%; }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div id="fileWarn" style="display:none;margin-bottom:12px;padding:10px 12px;border:1px solid #ffd8a8;background:#fff4e6;color:#8a4b08;border-radius:10px;font-size:13px;">
-      현재 <b>file://</b> 로 열려 데이터 API가 동작하지 않습니다. <b>http://127.0.0.1:8000/index.html</b> 로 접속해주세요.
+      현재 <b>file://</b> 로 열려 있습니다. 로컬 서버가 켜져 있으면 데이터는 <b>http://127.0.0.1:8000</b> API로 불러옵니다.
     </div>
     <div class="top">
       <h1>시황 점검 대시보드</h1>
@@ -103,103 +128,11 @@
 
     <div class="grid" id="summaryCards"></div>
 
-    <div class="grid" style="margin-top: 14px;">
-      <div class="card span-6">
-        <div class="head-row">
-          <div>
-            <div class="title">미국 10년물 국채금리 (US10Y)</div>
-          </div>
-        </div>
-        <div class="chart" id="chart-us10y"></div>
-      </div>
-
-      <div class="card span-6">
-        <div class="head-row">
-          <div>
-            <div class="title">미국 2년물 국채금리 (US2Y)</div>
-          </div>
-        </div>
-        <div class="chart" id="chart-us2y"></div>
-      </div>
-
-      <div class="card span-6">
-        <div class="head-row"><div class="title">원/달러 (KRW/USD)</div></div>
-        <div class="memo">환율 급등:
-
-→ 외국인 이탈 가능성
-→ 코스피 부담</div>
-        <div class="chart" id="chart-usdkrw"></div>
-      </div>
-
-      <div class="card span-6">
-        <div class="head-row"><div class="title">VIX 공포지수</div></div>
-        <div class="memo">기준
-15 이하 → 안정
-20 이상 → 경계
-30 이상 → 위험</div>
-        <div class="chart" id="chart-vix"></div>
-      </div>
-
-      <div class="card span-6">
-        <div class="head-row"><div class="title">필라델피아 반도체지수 (SOX)</div></div>
-        <div class="chart" id="chart-sox"></div>
-      </div>
-
-      <div class="card span-6">
-        <div class="head-row"><div class="title">WTI 유가</div></div>
-        <div class="chart" id="chart-wti"></div>
-      </div>
-
-      <div class="card span-6">
-        <div class="head-row"><div class="title">달러 인덱스 (DXY)</div></div>
-        <div class="chart" id="chart-dxy"></div>
-      </div>
-
-      <div class="card span-6">
-        <div class="head-row"><div class="title">국제금값 (Gold)</div></div>
-        <div class="chart" id="chart-gold"></div>
-      </div>
-
-      <div class="card span-6">
-        <div class="head-row">
-          <div>
-            <div class="title">외국인 선물 수급</div>
-          </div>
-          <button class="btn" id="refreshFlow">새로고침</button>
-        </div>
-        <div class="memo">단일 수치보다 3~5일 누적 흐름이 중요 (현물 시장 선행지표)
-
-- 외국인 선물 순매수(계약): ±3,000 이상이면 방향성 신호
-- 프로그램 순매수(억원): 차익거래 vs 비차익거래 구분이 더 정밀</div>
-        <div class="asof" id="flowAsOf">기준시각: -</div>
-        <table>
-          <thead><tr><th>항목</th><th>당일</th><th>3일</th><th>5일</th><th>10일</th><th>20일</th></tr></thead>
-          <tbody id="flowTableBody"></tbody>
-        </table>
-      </div>
-
-      <div class="card span-6">
-        <div class="head-row">
-          <div>
-            <div class="title">시장 거래대금</div>
-          </div>
-          <button class="btn" id="refreshTurnover">새로고침</button>
-        </div>
-        <div class="memo">상승 시 거래대금 증가(강한 상승), 감소(약한 상승)
-
-- 코스피 거래대금 절대값 — 평균(약 12~15조) 대비 많고 적음
-- 코스피/코스닥 비율 — 코스닥 비중이 높으면 개인/투기 자금 유입
-- 전일 대비 증감 — -10% 이상이면 의미 있는 유동성 감소</div>
-        <div class="asof" id="turnoverAsOf">기준시각: -</div>
-        <table>
-          <thead><tr><th>시장</th><th>거래대금</th><th>전일대비</th></tr></thead>
-          <tbody id="turnoverTableBody"></tbody>
-        </table>
-      </div>
+    <div class="section-head">
+      <h2>KOSPI 업종지표</h2>
+      <p>공개 원천 기준으로 업종 구성종목 흐름을 합성해 표시합니다. KOSPI 200은 지수 차트를 직접 사용합니다.</p>
     </div>
-  </div>
-
-  
+    <div class="grid" id="sectorCards"></div>
   </div>
 
   <script src="https://s3.tradingview.com/tv.js"></script>
@@ -224,8 +157,83 @@
       '^KS11': 'KOSPI',
       '^KQ11': 'KOSDAQ'
     };
+    const API_BASE = location.protocol === 'file:' ? 'http://127.0.0.1:8000' : '';
+    const apiUrl = (path) => API_BASE + path;
+    const summaryItemByKey = {};
+    const summaryItemBySymbol = {};
+    const sectorItems = [
+      { code: '1002', name: 'KOSPI 대형주', popupKey: 'SECTOR_1002' },
+      { code: '1003', name: 'KOSPI 중형주', popupKey: 'SECTOR_1003' },
+      { code: '1004', name: 'KOSPI 소형주', popupKey: 'SECTOR_1004' },
+      { code: '1005', name: '음식료품', popupKey: 'SECTOR_1005' },
+      { code: '1006', name: '섬유·의복', popupKey: 'SECTOR_1006' },
+      { code: '1007', name: '종이·목재', popupKey: 'SECTOR_1007' },
+      { code: '1008', name: '화학', popupKey: 'SECTOR_1008' },
+      { code: '1009', name: '의약품', popupKey: 'SECTOR_1009' },
+      { code: '1010', name: '비금속광물', popupKey: 'SECTOR_1010' },
+      { code: '1011', name: '철강·금속', popupKey: 'SECTOR_1011' },
+      { code: '1012', name: '기계', popupKey: 'SECTOR_1012' },
+      { code: '1013', name: '전기·전자', popupKey: 'SECTOR_1013' },
+      { code: '1014', name: '의료정밀', popupKey: 'SECTOR_1014' },
+      { code: '1015', name: '운수장비', popupKey: 'SECTOR_1015' },
+      { code: '1016', name: '유통업', popupKey: 'SECTOR_1016' },
+      { code: '1017', name: '전기·가스업', popupKey: 'SECTOR_1017' },
+      { code: '1018', name: '건설업', popupKey: 'SECTOR_1018' },
+      { code: '1019', name: '운수·창고업', popupKey: 'SECTOR_1019' },
+      { code: '1020', name: '통신업', popupKey: 'SECTOR_1020' },
+      { code: '1021', name: '금융업', popupKey: 'SECTOR_1021' },
+      { code: '1022', name: '은행', popupKey: 'SECTOR_1022' },
+      { code: '1024', name: '증권', popupKey: 'SECTOR_1024' },
+      { code: '1025', name: '보험', popupKey: 'SECTOR_1025' },
+      { code: '1026', name: '서비스업', popupKey: 'SECTOR_1026' },
+      { code: '1027', name: '제조업', popupKey: 'SECTOR_1027' },
+      { code: '1028', name: 'KOSPI 200', popupKey: 'SECTOR_1028' }
+    ];
+    summaryItems.forEach(item => {
+      summaryItemByKey[item.popupKey] = item;
+      summaryItemBySymbol[item.symbol] = item;
+    });
 
         const lwChartInstances = {};
+
+    function getZonedParts(timeZone) {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        weekday: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      }).formatToParts(new Date());
+      const out = {};
+      parts.forEach(part => { if (part.type !== 'literal') out[part.type] = part.value; });
+      return {
+        weekday: out.weekday,
+        minutes: Number(out.hour) * 60 + Number(out.minute)
+      };
+    }
+
+    function isRegularMarketOpen(key) {
+      const isKorea = key === 'KOSPI' || key === 'KOSDAQ';
+      const isUS = key === 'NASDAQ' || key === 'SP500';
+      if (!isKorea && !isUS) return false;
+      const parts = getZonedParts(isKorea ? 'Asia/Seoul' : 'America/New_York');
+      if (parts.weekday === 'Sat' || parts.weekday === 'Sun') return false;
+      const open = isKorea ? 9 * 60 : 9 * 60 + 30;
+      const close = isKorea ? 15 * 60 + 30 : 16 * 60;
+      return parts.minutes >= open && parts.minutes < close;
+    }
+
+    function updateMarketStatus(key) {
+      const el = document.getElementById(`status-${key}`);
+      if (!el) return;
+      const live = isRegularMarketOpen(key);
+      el.textContent = live ? '실시간' : '장종료';
+      el.className = `market-status ${live ? 'live' : 'closed'}`;
+    }
+
+    function updateAllMarketStatuses() {
+      summaryItems.forEach(item => updateMarketStatus(item.popupKey));
+    }
 
     function calculateSMA(data, period) {
       const result = [];
@@ -256,7 +264,7 @@
       const inst = lwChartInstances[key];
       if (!inst) return;
       try {
-        const res = await fetch(`/api/chart?key=${encodeURIComponent(key)}&interval=${inst.interval}`);
+        const res = await fetch(apiUrl(`/api/chart?key=${encodeURIComponent(key)}&interval=${inst.interval}`));
         const json = await res.json();
         if (!json?.ok || !json.series) throw new Error('no data');
         let series = json.series;
@@ -270,6 +278,21 @@
           low: x.low,
           close: x.close
         }));
+
+        const lastData = chartData[chartData.length - 1];
+        const prevData = chartData[chartData.length - 2];
+        const valueEl = document.getElementById(`last-${key}`);
+        const deltaEl = document.getElementById(`chg-${key}`);
+        if (valueEl && lastData) {
+          valueEl.textContent = Number(lastData.close).toLocaleString(undefined, { maximumFractionDigits: 2 });
+          const pct = prevData && prevData.close ? ((lastData.close - prevData.close) / prevData.close) * 100 : 0;
+          const dir = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+          valueEl.className = `value ${dir}`;
+          if (deltaEl) {
+            deltaEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+            deltaEl.className = `delta ${dir}`;
+          }
+        }
 
         inst.candleSeries.setData(chartData);
         const ema12 = calculateEMA(chartData, 12);
@@ -301,6 +324,7 @@
           const timeScale = inst.chart.timeScale();
           const logicalRange = timeScale.getVisibleLogicalRange();
           if (!logicalRange) return;
+          const paneWidth = typeof timeScale.width === 'function' ? timeScale.width() : width;
           
           const startLogical = Math.max(0, Math.floor(logicalRange.from));
           const endLogical = Math.min(chartData.length - 1, Math.ceil(logicalRange.to));
@@ -312,7 +336,9 @@
             if (sign === 1) ctx.fillStyle = 'rgba(255, 80, 80, 0.18)';
             else if (sign === -1) ctx.fillStyle = 'rgba(60, 120, 255, 0.15)';
             if (sign !== 0 && xStart !== null && xEnd !== null) {
-              ctx.fillRect(Math.floor(xStart), 0, Math.ceil(xEnd - xStart), height);
+              const left = Math.max(0, Math.floor(xStart));
+              const right = Math.min(paneWidth, width, Math.ceil(xEnd));
+              if (right > left) ctx.fillRect(left, 0, right - left, height);
             }
           };
           
@@ -336,7 +362,7 @@
                 drawMacdRect(currentMacdSign, startX, x1);
               }
               currentMacdSign = sign;
-              startX = x1;
+              startX = sign === 0 ? null : (i === startLogical ? 0 : x1);
             }
             
             if (inst.interval && inst.interval.endsWith('m') && i > 0 && typeof chartData[i].time === 'number') {
@@ -356,12 +382,7 @@
           }
           
           if (currentMacdSign !== 0 && startX !== null) {
-             let lastCx = timeScale.logicalToCoordinate(endLogical);
-             let hw = 3;
-             let prevCx = timeScale.logicalToCoordinate(endLogical - 1);
-             if (prevCx !== null && lastCx !== null) hw = (lastCx - prevCx) / 2;
-             let x2 = (lastCx !== null) ? lastCx + hw : startX + hw*2;
-             drawMacdRect(currentMacdSign, startX, x2);
+             drawMacdRect(currentMacdSign, startX, paneWidth);
           }
         };
         
@@ -506,6 +527,10 @@
         }
       } catch (e) {
         console.error(e);
+        const chartContainer = document.getElementById('lwchart-' + key);
+        if (chartContainer) {
+          chartContainer.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#5f6b85;font-size:13px;">차트 데이터 없음</div>';
+        }
       }
     }
 
@@ -565,14 +590,15 @@
           <div class="head-row">
             <div>
               <div class="title">${item.name}</div>
+              <div class="market-status closed" id="status-${item.popupKey}">장종료</div>
               <div style="display:flex;gap:12px;align-items:baseline;">
                 <div class="value flat" id="v-${item.symbol}">-</div>
                 <div class="delta flat" id="d-${item.symbol}">-</div>
               </div>
             </div>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
-              <div style="display:flex;gap:4px;align-items:center;">
-                <select id="min-${item.popupKey}" disabled style="border:1px solid var(--line);border-radius:4px;padding:2px 4px;margin-right:8px;font-size:13px;">
+            <div class="chart-controls">
+              <div class="chart-tools">
+                <select id="min-${item.popupKey}" class="minute-select" disabled>
                   <option value="1">1분</option>
                   <option value="3">3분</option>
                   <option value="5">5분</option>
@@ -586,7 +612,7 @@
                 <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1wk">주봉</button>
                 <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1mo">월봉</button>
               </div>
-              <div style="display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);">
+              <div class="scale-tools" style="font-size:12px;color:var(--muted);">
                 <span>조회기간: <input type="number" id="period-${item.popupKey}" value="120" style="width:50px;text-align:right;border:1px solid var(--line);border-radius:4px;padding:2px 4px;" /></span>
                 <span>최대: <input type="number" id="ymax-${item.popupKey}" placeholder="자동" style="width:60px;text-align:right;border:1px solid var(--line);border-radius:4px;padding:2px 4px;" /></span>
                 <span>최소: <input type="number" id="ymin-${item.popupKey}" placeholder="자동" style="width:60px;text-align:right;border:1px solid var(--line);border-radius:4px;padding:2px 4px;" /></span>
@@ -607,6 +633,7 @@
         root.appendChild(div);
         
         setTimeout(() => {
+          updateMarketStatus(item.popupKey);
           initLwChart(item.popupKey, `lwchart-${item.popupKey}`);
           
           // Interval buttons
@@ -682,115 +709,121 @@
       });
     }
 
-    function attachChartHover(el, series, values, min, span, dims) {
-      const { w, h, padL, padR, padT, padB } = dims;
-      if (!el) return;
-      el.onmousemove = (ev) => {
-        const rect = el.getBoundingClientRect();
-        const rx = ev.clientX - rect.left;
-        const clampedX = Math.max(padL, Math.min(w - padR, rx));
-        const idx = Math.round(((clampedX - padL) / (w - padL - padR)) * (values.length - 1));
-        const x = padL + (idx * (w - padL - padR)) / (values.length - 1);
-        const v = values[idx];
-        const y = h - padB - ((v - min) / span) * (h - padT - padB);
-        const d = series[idx]?.date || '';
-        const hover = document.getElementById(`${el.id}-hover`);
-        if (!hover) return;
-        hover.innerHTML = `
-          <line x1="${x}" y1="${padT}" x2="${x}" y2="${h - padB}" stroke="#222" stroke-width="1.2" stroke-dasharray="4 4" />
-          <line x1="${padL}" y1="${y}" x2="${w - padR}" y2="${y}" stroke="#222" stroke-width="1.2" stroke-dasharray="4 4" />
-          <rect x="${padL - 44}" y="${y - 10}" width="40" height="18" fill="#111" rx="4" />
-          <text x="${padL - 40}" y="${y + 3}" fill="#fff" font-size="10">${Number(v).toFixed(2)}</text>
-          <rect x="${Math.min(w - 140, x + 8)}" y="${Math.max(8, y - 28)}" width="132" height="24" fill="#111" rx="6" />
-          <text x="${Math.min(w - 134, x + 14)}" y="${Math.max(24, y - 12)}" fill="#fff" font-size="11">${d} | ${Number(v).toFixed(2)}</text>
-        `;
+    function setupChartControls(div, item) {
+      const btns = div.querySelectorAll('.tf-btn');
+      const minInput = div.querySelector(`#min-${item.popupKey}`);
+      btns.forEach(b => b.addEventListener('click', (e) => {
+        btns.forEach(bb => { bb.style.background = '#e9f1ff'; bb.style.color = '#134db5'; });
+        e.target.style.background = 'var(--accent)';
+        e.target.style.color = '#fff';
+        const tf = e.target.getAttribute('data-tf');
+        if (tf === 'minute') {
+          if (minInput) minInput.disabled = false;
+          lwChartInstances[item.popupKey].interval = (minInput.value || 1) + 'm';
+        } else {
+          if (minInput) minInput.disabled = true;
+          lwChartInstances[item.popupKey].interval = tf;
+        }
+        loadLwChart(item.popupKey);
+      }));
+
+      if (minInput) {
+        minInput.addEventListener('change', (e) => {
+          if (!minInput.disabled) {
+            lwChartInstances[item.popupKey].interval = (e.target.value || 1) + 'm';
+            loadLwChart(item.popupKey);
+          }
+        });
+      }
+
+      const inp = div.querySelector(`#period-${item.popupKey}`);
+      inp.addEventListener('change', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (val > 0) {
+          lwChartInstances[item.popupKey].visibleCount = val;
+          loadLwChart(item.popupKey);
+        }
+      });
+
+      const updateYAxis = () => {
+        const ymaxInp = div.querySelector(`#ymax-${item.popupKey}`);
+        const yminInp = div.querySelector(`#ymin-${item.popupKey}`);
+        const ymax = parseFloat(ymaxInp.value);
+        const ymin = parseFloat(yminInp.value);
+        const inst = lwChartInstances[item.popupKey];
+        if (!inst) return;
+        const isManual = !isNaN(ymax) && !isNaN(ymin) && ymax > ymin;
+        const provider = isManual ? () => ({ priceRange: { minValue: ymin, maxValue: ymax } }) : null;
+        inst.candleSeries.applyOptions({ autoscaleInfoProvider: provider });
       };
-      el.onmouseleave = () => {
-        const hover = document.getElementById(`${el.id}-hover`);
-        if (hover) hover.innerHTML = '';
-      };
+
+      div.querySelector(`#ymax-${item.popupKey}`).addEventListener('change', updateYAxis);
+      div.querySelector(`#ymin-${item.popupKey}`).addEventListener('change', updateYAxis);
+
+      div.querySelectorAll('.lg-item').forEach(lg => lg.addEventListener('click', (e) => {
+        const seriesKey = e.currentTarget.getAttribute('data-series');
+        const inst = lwChartInstances[item.popupKey];
+        if (!inst) return;
+        inst.toggles[seriesKey] = !inst.toggles[seriesKey];
+        if (seriesKey === 'candle') {
+          inst.candleSeries.applyOptions({ visible: inst.toggles[seriesKey] });
+        } else {
+          inst.maSeries[seriesKey].applyOptions({ visible: inst.toggles[seriesKey] });
+        }
+        e.currentTarget.style.opacity = inst.toggles[seriesKey] ? '1' : '0.3';
+      }));
     }
 
-    async function renderMiniChart(containerId, key) {
-      const el = document.getElementById(containerId);
-      if (!el) return;
-      try {
-        const res = await fetch(`/api/chart?key=${encodeURIComponent(key)}`);
-        const json = await res.json();
-        if (!json?.ok || !Array.isArray(json.series) || !json.series.length) throw new Error('no data');
-        const series = json.series;
-        const values = series.map(x => Number(x.close));
-        const w = el.clientWidth || 900;
-        const h = el.clientHeight || 260;
-        const padL = 52;
-        const padR = 14;
-        const padT = 24;
-        const padB = 26;
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        const span = (max - min) || 1;
-        const points = values.map((v, i) => {
-          const x = padL + (i * (w - padL - padR)) / (values.length - 1);
-          const y = h - padB - ((v - min) / span) * (h - padT - padB);
-          return `${x},${y}`;
-        }).join(' ');
-        const last = values[values.length - 1];
-        const yStep = key === 'USDKRW' ? 20 : (key === 'GOLD' ? 200 : (key === 'VIX' ? 5 : (key === 'SOX' ? 1000 : (key === 'WTI' ? 10 : (key === 'DXY' ? 2 : 0.2)))));
-        const yStart = Math.floor(min / yStep) * yStep;
-        const yEnd = Math.ceil(max / yStep) * yStep;
-        const yTicks = [];
-        for (let v = yStart; v <= yEnd + 1e-9; v += yStep) yTicks.push(Number(v.toFixed(2)));
-        const yTickSvg = yTicks.map((v) => {
-          const y = h - padB - ((v - min) / span) * (h - padT - padB);
-          const label = (key === 'USDKRW' || key === 'GOLD')
-            ? Math.round(v).toLocaleString()
-            : (key === 'VIX' || key === 'SOX' ? Math.round(v).toLocaleString() : v.toFixed(2));
-          return `<text x="6" y="${y + 4}" fill="#5f6b85" font-size="11">${label}</text>
-                  <line x1="${padL}" y1="${y}" x2="${w - padR}" y2="${y}" stroke="#e6ecf7" stroke-width="1" />`;
-        }).join('');
-        const monthTicks = [];
-        let prevYm = '';
-        for (let i = 0; i < series.length; i += 1) {
-          const d = series[i]?.date || '';
-          if (!d) continue;
-          const ym = d.slice(0, 7);
-          if (ym !== prevYm) {
-            monthTicks.push({ i, d });
-            prevYm = ym;
-          }
-        }
-        const xTickSvg = monthTicks.map((t) => {
-          const x = padL + (t.i * (w - padL - padR)) / (values.length - 1);
-          const label = `${t.d.slice(0,4)}.${t.d.slice(5,7)}.`;
-          return `<text x="${x - 20}" y="${h - 6}" fill="#5f6b85" font-size="11">${label}</text>`;
-        }).join('');
-        const y45 = h - padB - ((4.5 - min) / span) * (h - padT - padB);
-        const y45Line = (key === 'US10Y' && 4.5 >= min && 4.5 <= max)
-          ? `<line x1="${padL}" y1="${y45}" x2="${w - padR}" y2="${y45}" stroke="#d92c2c" stroke-width="1.5" stroke-dasharray="5 4" />
-             <text x="${w - padR - 40}" y="${y45 - 4}" fill="#d92c2c" font-size="11">4.5</text>`
-          : '';
-        const lastDate = series[series.length - 1]?.date || '';
-        el.innerHTML = `<svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-          <rect x="0" y="0" width="${w}" height="${h}" fill="#f9fbff"/>
-          ${yTickSvg}
-          ${y45Line}
-          <polyline fill="none" stroke="#0f6fff" stroke-width="2.4" points="${points}" />
-          <text x="${padL}" y="${padT - 8}" fill="#5f6b85" font-size="13" font-weight="800">최근 ${values.length}일</text>
-          <text x="${w - padR}" y="${padT - 8}" fill="#111" font-size="13" font-weight="800" text-anchor="end">
-            ${lastDate}  Last:  <tspan fill="#d92c2c">${last.toLocaleString()}</tspan>
-          </text>
-          ${xTickSvg}
-          <g id="${containerId}-hover"></g>
-        </svg>`;
-        attachChartHover(el, series, values, min, span, { w, h, padL, padR, padT, padB });
-      } catch (e) {
-        el.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#5f6b85;font-size:13px;">차트 데이터 없음</div>';
-      }
+    function renderSectorCharts() {
+      const root = document.getElementById('sectorCards');
+      root.innerHTML = '';
+      sectorItems.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'card span-6';
+        div.innerHTML = `
+          <div class="head-row">
+            <div>
+              <div class="title">${item.name}</div>
+              <div style="display:flex;gap:10px;align-items:baseline;">
+                <div class="value flat" id="last-${item.popupKey}" style="font-size:40px;">-</div>
+                <div class="delta flat" id="chg-${item.popupKey}" style="font-size:22px;">-</div>
+              </div>
+            </div>
+            <div class="chart-controls">
+              <div class="chart-tools">
+                <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1d" style="background:var(--accent);color:#fff;">일봉</button>
+                <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1wk">주봉</button>
+                <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1mo">월봉</button>
+              </div>
+              <div class="scale-tools" style="font-size:12px;color:var(--muted);">
+                <span>조회기간: <input type="number" id="period-${item.popupKey}" value="120" style="width:50px;text-align:right;border:1px solid var(--line);border-radius:4px;padding:2px 4px;" /></span>
+                <span>최대: <input type="number" id="ymax-${item.popupKey}" placeholder="자동" style="width:60px;text-align:right;border:1px solid var(--line);border-radius:4px;padding:2px 4px;" /></span>
+                <span>최소: <input type="number" id="ymin-${item.popupKey}" placeholder="자동" style="width:60px;text-align:right;border:1px solid var(--line);border-radius:4px;padding:2px 4px;" /></span>
+              </div>
+            </div>
+          </div>
+          <div class="legend-row" style="margin-top:6px;margin-bottom:6px;font-size:13px;display:flex;gap:12px;cursor:pointer;user-select:none;flex-wrap:wrap;">
+            <span class="lg-item" data-series="candle" style="font-weight:bold;color:#111;">■ 캔들</span>
+            <span class="lg-item" data-series="5" style="font-weight:bold;color:#d92c2c;">■ 5</span>
+            <span class="lg-item" data-series="10" style="font-weight:bold;color:#1f5bd8;">■ 10</span>
+            <span class="lg-item" data-series="20" style="font-weight:bold;color:#0a9d58;">■ 20</span>
+            <span class="lg-item" data-series="60" style="font-weight:bold;color:#e4a11b;">■ 60</span>
+            <span class="lg-item" data-series="120" style="font-weight:bold;color:#8040a0;">■ 120</span>
+            <span class="lg-item" data-series="240" style="font-weight:bold;color:#606060;">■ 240</span>
+          </div>
+          <div class="chart lw-chart" id="lwchart-${item.popupKey}" style="height:270px;background:none;border:none;border-top:1px solid #dbe3f1;border-left:1px solid #dbe3f1;"></div>
+        `;
+        root.appendChild(div);
+        setTimeout(() => {
+          initLwChart(item.popupKey, `lwchart-${item.popupKey}`);
+          setupChartControls(div, item);
+        }, idx * 120);
+      });
     }
 
         async function fetchYahooQuote(symbol) {
       try {
-        const url = `/api/quote?symbol=${encodeURIComponent(symbol)}`;
+        const url = apiUrl(`/api/quote?symbol=${encodeURIComponent(symbol)}`);
         const res = await fetch(url);
         const json = await res.json();
         if (!json?.ok || !json?.quote) return null;
@@ -807,7 +840,7 @@
 
     async function fallbackFromChart(key) {
       try {
-        const res = await fetch(`/api/chart?key=${encodeURIComponent(key)}`);
+        const res = await fetch(apiUrl(`/api/chart?key=${encodeURIComponent(key)}`));
         const json = await res.json();
         const s = json?.series || [];
         if (s.length < 2) return null;
@@ -855,90 +888,29 @@
         vEl.className = `value ${dir}`;
         dEl.className = `delta ${dir}`;
       }
+      updateAllMarketStatuses();
       document.getElementById('updatedAt').textContent = '업데이트: ' + new Date().toLocaleString('ko-KR');
     }
 
-    async function fetchStatsAndUpdateTables() {
-      try {
-        const res = await fetch('/api/stats');
-        const json = await res.json();
-        if (json.ok) {
-          const bodyF = document.getElementById('flowTableBody');
-          const fmtColor = (v) => {
-             if (v > 0) return '#d92c2c';
-             if (v < 0) return '#1f5bd8';
-             return '#5f6b85';
-          };
-          const row1 = json.futuresArray || [0,0,0,0,0];
-          const row2 = json.progsArray || [0,0,0,0,0];
-          bodyF.innerHTML = `
-            <tr>
-              <td>외국인 선물(계약)</td>
-              <td style="color:${fmtColor(row1[0])}">${row1[0].toLocaleString()}</td>
-              <td style="color:${fmtColor(row1[1])}">${row1[1].toLocaleString()}</td>
-              <td style="color:${fmtColor(row1[2])}">${row1[2].toLocaleString()}</td>
-              <td style="color:${fmtColor(row1[3])}">${row1[3].toLocaleString()}</td>
-              <td style="color:${fmtColor(row1[4])}">${row1[4].toLocaleString()}</td>
-            </tr>
-            <tr>
-              <td>프로그램(억원)</td>
-              <td style="color:${fmtColor(row2[0])}">${row2[0].toLocaleString()}</td>
-              <td style="color:${fmtColor(row2[1])}">${row2[1].toLocaleString()}</td>
-              <td style="color:${fmtColor(row2[2])}">${row2[2].toLocaleString()}</td>
-              <td style="color:${fmtColor(row2[3])}">${row2[3].toLocaleString()}</td>
-              <td style="color:${fmtColor(row2[4])}">${row2[4].toLocaleString()}</td>
-            </tr>
-          `;
-          document.getElementById('flowAsOf').textContent = '기준시각: ' + new Date().toLocaleString('ko-KR');
-
-          const bodyT = document.getElementById('turnoverTableBody');
-          const kv = parseInt(json.kospiTurnover.replace(/,/g, ''));
-          const kq = parseInt(json.kosdaqTurnover.replace(/,/g, ''));
-          const ratio = kv ? ((kq / kv) * 100).toFixed(1) : '0.0';
-          const ratioLabel = parseFloat(ratio) >= 80 ? '비중 높음 (투기/개인장)' : '정상 수준';
-          const ratioColor = parseFloat(ratio) >= 80 ? '#d92c2c' : '#5f6b85';
-          
-          bodyT.innerHTML = `
-            <tr>
-              <td>코스피</td>
-              <td>${json.kospiTurnover} 백만</td>
-              <td style="color:${parseFloat(json.kospiTurnoverDiff)>0?'#d92c2c':(parseFloat(json.kospiTurnoverDiff)<0?'#1f5bd8':'#5f6b85')}">${json.kospiTurnoverDiff > 0 ? '+' : ''}${json.kospiTurnoverDiff}%</td>
-            </tr>
-            <tr>
-              <td>코스닥</td>
-              <td>${json.kosdaqTurnover} 백만</td>
-              <td style="color:${parseFloat(json.kosdaqTurnoverDiff)>0?'#d92c2c':(parseFloat(json.kosdaqTurnoverDiff)<0?'#1f5bd8':'#5f6b85')}">${json.kosdaqTurnoverDiff > 0 ? '+' : ''}${json.kosdaqTurnoverDiff}%</td>
-            </tr>
-            <tr>
-              <td>코스닥/코스피</td>
-              <td>${ratio}%</td>
-              <td style="color:${ratioColor}">${ratioLabel}</td>
-            </tr>
-          `;
-          document.getElementById('turnoverAsOf').textContent = '기준시각: ' + new Date().toLocaleString('ko-KR');
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    function refreshFlowTable() {
-      fetchStatsAndUpdateTables();
-    }
-
-    function renderTurnoverTable() {
-      fetchStatsAndUpdateTables();
-    }
-
-            document.getElementById('refreshFlow').addEventListener('click', refreshFlowTable);
-    document.getElementById('refreshTurnover').addEventListener('click', renderTurnoverTable);
-
     renderSummary();
+    renderSectorCharts();
     if (location.protocol === 'file:') {
       document.getElementById('fileWarn').style.display = 'block';
     }
-    
-    // Auto-refresh minute charts every 60 seconds
+    function hasOpenRegularMarket() {
+      return summaryItems.some(item => isRegularMarketOpen(item.popupKey));
+    }
+
+    function refreshOpenRegularCharts() {
+      summaryItems.forEach(item => {
+        const inst = lwChartInstances[item.popupKey];
+        if (inst && isRegularMarketOpen(item.popupKey) && !(inst.interval || '').endsWith('m')) {
+          loadLwChart(item.popupKey);
+        }
+      });
+    }
+
+    // 분봉은 사용자가 짧은 흐름을 보는 모드라 2초마다 갱신한다.
     setInterval(() => {
       summaryItems.forEach(item => {
         const inst = lwChartInstances[item.popupKey];
@@ -946,20 +918,20 @@
           loadLwChart(item.popupKey);
         }
       });
-    }, 60000);
+    }, 2000);
 
-    renderMiniChart('chart-us10y', 'US10Y');
-    renderMiniChart('chart-us2y', 'US2Y');
-    renderMiniChart('chart-usdkrw', 'USDKRW');
-    renderMiniChart('chart-vix', 'VIX');
-    renderMiniChart('chart-sox', 'SOX');
-    renderMiniChart('chart-wti', 'WTI');
-    renderMiniChart('chart-dxy', 'DXY');
-    renderMiniChart('chart-gold', 'GOLD');
-    refreshFlowTable();
-    renderTurnoverTable();
+    setInterval(() => {
+      updateAllMarketStatuses();
+      if (hasOpenRegularMarket()) {
+        updateSummaryNumbers();
+        refreshOpenRegularCharts();
+      }
+    }, 3000);
+
     updateSummaryNumbers();
-    setInterval(updateSummaryNumbers, 60000);
+    setInterval(() => {
+      if (!hasOpenRegularMarket()) updateSummaryNumbers();
+    }, 60000);
   </script>
 </body>
 </html>

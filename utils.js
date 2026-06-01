@@ -22,6 +22,49 @@ const chartMap = {
 };
 
 const quoteCache = new Map();
+const sectorSeriesCache = new Map();
+
+const NAVER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0',
+  'Accept': 'application/json'
+};
+
+const DAUM_HEADERS = {
+  'User-Agent': 'Mozilla/5.0',
+  'Accept': 'application/json, text/plain, */*',
+  'Referer': 'https://finance.daum.net/'
+};
+
+const sectorItems = [
+  { code: '1002', name: 'KOSPI 대형주', daumSectorCode: '002' },
+  { code: '1003', name: 'KOSPI 중형주', daumSectorCode: '003' },
+  { code: '1004', name: 'KOSPI 소형주', daumSectorCode: '004' },
+  { code: '1005', name: '음식료품', daumSectorCode: '005' },
+  { code: '1006', name: '섬유·의복', daumSectorCode: '006' },
+  { code: '1007', name: '종이·목재', daumSectorCode: '007' },
+  { code: '1008', name: '화학', daumSectorCode: '008' },
+  { code: '1009', name: '의약품', daumSectorCode: '009' },
+  { code: '1010', name: '비금속광물', daumSectorCode: '010' },
+  { code: '1011', name: '철강·금속', daumSectorCode: '011' },
+  { code: '1012', name: '기계', daumSectorCode: '012' },
+  { code: '1013', name: '전기·전자', daumSectorCode: '013' },
+  { code: '1014', name: '의료정밀', daumSectorCode: '014' },
+  { code: '1015', name: '운수장비', daumSectorCode: '015' },
+  { code: '1016', name: '유통업', daumSectorCode: '016' },
+  { code: '1017', name: '전기·가스업', daumSectorCode: '017' },
+  { code: '1018', name: '건설업', daumSectorCode: '018' },
+  { code: '1019', name: '운수·창고업', daumSectorCode: '019' },
+  { code: '1020', name: '통신업', daumSectorCode: '020' },
+  { code: '1021', name: '금융업', daumSectorCode: '021' },
+  { code: '1022', name: '은행', naverSectorName: '은행' },
+  { code: '1024', name: '증권', daumSectorCode: '024' },
+  { code: '1025', name: '보험', daumSectorCode: '025' },
+  { code: '1026', name: '서비스업', daumSectorCode: '026' },
+  { code: '1027', name: '제조업', daumSectorCode: '027' },
+  { code: '1028', name: 'KOSPI 200', naverIndexCode: 'KPI200' }
+];
+
+const sectorByKey = new Map(sectorItems.map(item => [`SECTOR_${item.code}`, item]));
 
 const quoteFallbackKeyMap = {
   '^IXIC': 'NASDAQ',
@@ -144,7 +187,209 @@ async function yahooSimpleSeries(encodedSym, range = '1y') {
   return rows;
 }
 
+function naverNumber(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return NaN;
+  return Number(value.replace(/,/g, ''));
+}
+
+function toNaverChartRows(priceInfos) {
+  return (priceInfos || [])
+    .map(x => {
+      const localDate = String(x.localDate || x.localTradedAt || '').replace(/-/g, '');
+      if (localDate.length < 8) return null;
+      const date = `${localDate.slice(0, 4)}-${localDate.slice(4, 6)}-${localDate.slice(6, 8)}`;
+      const open = naverNumber(x.openPrice);
+      const high = naverNumber(x.highPrice);
+      const low = naverNumber(x.lowPrice);
+      const close = naverNumber(x.closePrice);
+      if (!Number.isFinite(close) || close <= 0) return null;
+      return {
+        date,
+        open: Number.isFinite(open) && open > 0 ? open : close,
+        high: Number.isFinite(high) && high > 0 ? high : close,
+        low: Number.isFinite(low) && low > 0 ? low : close,
+        close
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+async function fetchNaverIndexSeries(indexCode) {
+  const url = `https://api.stock.naver.com/chart/domestic/index/${encodeURIComponent(indexCode)}?periodType=dayCandle`;
+  const r = await fetch(url, { headers: NAVER_HEADERS });
+  const json = await r.json();
+  const rows = toNaverChartRows(json.priceInfos);
+  return rows.length ? rows.slice(-1500) : null;
+}
+
+async function fetchNaverItemSeries(itemCode) {
+  const code = String(itemCode || '').replace(/^A/, '');
+  if (!/^\d{6}$/.test(code)) return null;
+  const url = `https://api.stock.naver.com/chart/domestic/item/${code}?periodType=dayCandle`;
+  const r = await fetch(url, { headers: NAVER_HEADERS });
+  const json = await r.json();
+  const rows = toNaverChartRows(json.priceInfos);
+  return rows.length ? rows.slice(-1500) : null;
+}
+
+async function fetchDaumKospiSectors() {
+  const url = 'https://finance.daum.net/api/quotes/sectors?market=KOSPI';
+  const r = await fetch(url, { headers: DAUM_HEADERS });
+  const json = await r.json();
+  return Array.isArray(json.data) ? json.data : [];
+}
+
+async function fetchNaverSectorByName(sectorName) {
+  const params = new URLSearchParams({
+    sectorType: 'upjong',
+    businessDayCategory: 'daily',
+    page: '1',
+    pageSize: '50',
+    sectorSortType: 'CHANGE_RATE',
+    nationType: 'domestic'
+  });
+  const url = `https://m.stock.naver.com/front-api/stock/sectors/all?${params}`;
+  const r = await fetch(url, { headers: NAVER_HEADERS });
+  const json = await r.json();
+  const sectors = json?.result?.sectors || [];
+  return sectors.find(x => x.sectorName === sectorName) || null;
+}
+
+function pickSectorStocks(stocks, limit = 6) {
+  return (stocks || [])
+    .map(x => {
+      const weights = [x.marketCap, x.accTradePrice, x.tradePrice]
+        .map(naverNumber)
+        .filter(Number.isFinite);
+      return {
+        code: String(x.symbolCode || x.itemCode || x.code || '').replace(/^A/, ''),
+        weight: weights.length ? Math.max(...weights) : 1
+      };
+    })
+    .filter(x => /^\d{6}$/.test(x.code))
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, limit);
+}
+
+function buildCompositeSeries(seriesList, targetLastClose) {
+  const usable = seriesList
+    .filter(rows => Array.isArray(rows) && rows.length >= 30)
+    .map(rows => {
+      const lastClose = rows[rows.length - 1].close;
+      return { rows, lastClose };
+    })
+    .filter(x => Number.isFinite(x.lastClose) && x.lastClose > 0);
+
+  if (!usable.length) return null;
+
+  const byDate = new Map();
+  for (const item of usable) {
+    for (const row of item.rows) {
+      if (!byDate.has(row.date)) byDate.set(row.date, []);
+      byDate.get(row.date).push({
+        open: row.open / item.lastClose,
+        high: row.high / item.lastClose,
+        low: row.low / item.lastClose,
+        close: row.close / item.lastClose
+      });
+    }
+  }
+
+  const raw = [...byDate.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, values]) => {
+      if (values.length < Math.max(2, Math.ceil(usable.length * 0.45))) return null;
+      const avg = key => values.reduce((sum, x) => sum + x[key], 0) / values.length;
+      return { date, open: avg('open'), high: avg('high'), low: avg('low'), close: avg('close') };
+    })
+    .filter(Boolean);
+
+  if (!raw.length) return null;
+
+  const scale = Number.isFinite(targetLastClose) && targetLastClose > 0
+    ? targetLastClose / raw[raw.length - 1].close
+    : 1000;
+
+  return raw.slice(-1500).map(row => ({
+    date: row.date,
+    open: row.open * scale,
+    high: row.high * scale,
+    low: row.low * scale,
+    close: row.close * scale
+  }));
+}
+
+function aggregateOhlcRows(rows, interval) {
+  if (interval !== '1wk' && interval !== '1mo') return rows;
+  const groups = new Map();
+  for (const row of rows) {
+    const date = new Date(row.date + 'T00:00:00Z');
+    let groupKey;
+    if (interval === '1mo') {
+      groupKey = row.date.slice(0, 7) + '-01';
+    } else {
+      const day = date.getUTCDay() || 7;
+      date.setUTCDate(date.getUTCDate() - day + 1);
+      groupKey = date.toISOString().slice(0, 10);
+    }
+    const current = groups.get(groupKey);
+    if (!current) {
+      groups.set(groupKey, { date: groupKey, open: row.open, high: row.high, low: row.low, close: row.close });
+    } else {
+      current.high = Math.max(current.high, row.high);
+      current.low = Math.min(current.low, row.low);
+      current.close = row.close;
+    }
+  }
+  return [...groups.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+async function fetchKospiSectorSeries(key, interval = '1d') {
+  const cached = sectorSeriesCache.get(key);
+  if (cached && Date.now() - cached.time < 10 * 60 * 1000) return aggregateOhlcRows(cached.rows, interval);
+
+  const def = sectorByKey.get(key);
+  if (!def) return null;
+
+  if (def.naverIndexCode) {
+    const rows = await fetchNaverIndexSeries(def.naverIndexCode);
+    if (rows) sectorSeriesCache.set(key, { time: Date.now(), rows });
+    return rows ? aggregateOhlcRows(rows, interval) : null;
+  }
+
+  let targetLastClose = null;
+  let stocks = [];
+
+  if (def.daumSectorCode) {
+    const sectors = await fetchDaumKospiSectors();
+    const sector = sectors.find(x => x.sectorCode === def.daumSectorCode);
+    if (sector) {
+      targetLastClose = naverNumber(sector.tradePrice);
+      stocks = pickSectorStocks(sector.includedStocks);
+    }
+  } else if (def.naverSectorName) {
+    const sector = await fetchNaverSectorByName(def.naverSectorName);
+    if (sector) {
+      targetLastClose = 1000 * (1 + naverNumber(sector.changeRate) / 100);
+      stocks = pickSectorStocks(sector.items);
+    }
+  }
+
+  if (!stocks.length) return null;
+
+  const seriesList = await Promise.all(stocks.map(stock => fetchNaverItemSeries(stock.code).catch(() => null)));
+  const rows = buildCompositeSeries(seriesList, targetLastClose);
+  if (rows) sectorSeriesCache.set(key, { time: Date.now(), rows });
+  return rows ? aggregateOhlcRows(rows, interval) : null;
+}
+
 async function fetchChartSeries(key, interval = '1d') {
+  if (sectorByKey.has(key)) {
+    return fetchKospiSectorSeries(key, interval);
+  }
+
   // US10Y
   if (key === 'US10Y') {
     const rows = await yahooSimpleSeries('%5ETNX');
