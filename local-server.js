@@ -4,6 +4,7 @@ const path = require('path');
 
 const chartHandler = require('./api/chart');
 const quoteHandler = require('./api/quote');
+const sectorStocksHandler = require('./api/sector-stocks');
 const statsHandler = require('./api/stats');
 
 const PORT = Number(process.env.PORT || 8000);
@@ -12,6 +13,7 @@ const ROOT = __dirname;
 const apiHandlers = new Map([
   ['/api/chart', chartHandler],
   ['/api/quote', quoteHandler],
+  ['/api/sector-stocks', sectorStocksHandler],
   ['/api/stats', statsHandler]
 ]);
 

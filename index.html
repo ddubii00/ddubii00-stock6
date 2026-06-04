@@ -107,6 +107,19 @@
     }
     .close { background: #eef3ff; color: #123f8f; }
     .modal-chart { flex: 1; }
+    .stock-btn { background: #f59e0b; color: #fff; }
+    .stock-btn:hover { background: #e58c00; }
+    .stock-modal-box { width: min(1180px, 96vw); height: min(720px, 90vh); }
+    .stock-modal-title { font-size: 18px; font-weight: 800; }
+    .stock-modal-subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .stock-modal-body { padding: 12px 14px 16px; overflow: auto; }
+    .stock-table { min-width: 980px; font-size: 13px; }
+    .stock-table th { position: sticky; top: 0; z-index: 1; background: #f8fbff; }
+    .stock-table td.num, .stock-table th.num { text-align: right; }
+    .stock-table .rank { color: var(--muted); font-weight: 700; }
+    .stock-name { font-weight: 800; color: var(--text); }
+    .stock-code { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .stock-info { color: #3d4c68; max-width: 260px; white-space: normal; line-height: 1.35; }
 
     @media (max-width: 980px) {
       .span-3, .span-4, .span-6, .span-8 { grid-column: span 12; }
@@ -133,6 +146,19 @@
       <p>공개 원천 기준으로 업종 구성종목 흐름을 합성해 표시합니다. KOSPI 200은 지수 차트를 직접 사용합니다.</p>
     </div>
     <div class="grid" id="sectorCards"></div>
+  </div>
+
+  <div class="modal" id="stockModal">
+    <div class="modal-box stock-modal-box">
+      <div class="modal-top">
+        <div>
+          <div class="stock-modal-title" id="stockModalTitle">종목</div>
+          <div class="stock-modal-subtitle" id="stockModalSubtitle">시가총액순 20개</div>
+        </div>
+        <button class="btn close" id="stockModalClose">닫힘</button>
+      </div>
+      <div class="stock-modal-body" id="stockModalBody"></div>
+    </div>
   </div>
 
   <script src="https://s3.tradingview.com/tv.js"></script>
@@ -257,6 +283,97 @@
         result.push({ time: data[i].time, value: ema });
       }
       return result;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[ch]));
+    }
+
+    function formatRate(value) {
+      if (value === null || value === undefined || value === '') return '-';
+      const raw = String(value).replace('%', '').trim();
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return escapeHtml(value);
+      return `${n > 0 ? '+' : ''}${n.toFixed(2)}%`;
+    }
+
+    function rateClass(value) {
+      const n = Number(String(value ?? '').replace('%', '').trim());
+      if (!Number.isFinite(n)) return 'flat';
+      return n > 0 ? 'up' : n < 0 ? 'down' : 'flat';
+    }
+
+    function stockCell(value) {
+      const text = value === null || value === undefined || value === '' ? '-' : value;
+      return escapeHtml(text);
+    }
+
+    function closeStockModal() {
+      document.getElementById('stockModal').classList.remove('active');
+    }
+
+    async function openSectorStocks(item) {
+      const modal = document.getElementById('stockModal');
+      const title = document.getElementById('stockModalTitle');
+      const subtitle = document.getElementById('stockModalSubtitle');
+      const body = document.getElementById('stockModalBody');
+
+      title.textContent = `${item.name} 종목`;
+      subtitle.textContent = '시가총액순 20개 · 중요정보 / 시가총액 / 등락률 / PER / PBR / ROE';
+      body.innerHTML = '<div style="height:180px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:700;">불러오는 중...</div>';
+      modal.classList.add('active');
+
+      try {
+        const res = await fetch(apiUrl(`/api/sector-stocks?key=${encodeURIComponent(item.popupKey)}&limit=20`));
+        const json = await res.json();
+        if (!json?.ok || !Array.isArray(json.stocks)) throw new Error(json?.error || 'no data');
+
+        title.textContent = `${json.name || item.name} 종목`;
+        subtitle.textContent = `시가총액순 ${json.stocks.length}개 · 기준 ${new Date(json.asOf || Date.now()).toLocaleString('ko-KR')}`;
+        body.innerHTML = `
+          <table class="stock-table">
+            <thead>
+              <tr>
+                <th class="num">순위</th>
+                <th>종목</th>
+                <th class="num">현재가</th>
+                <th class="num">등락률</th>
+                <th>중요정보</th>
+                <th class="num">시가총액</th>
+                <th class="num">PER</th>
+                <th class="num">PBR</th>
+                <th class="num">ROE</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${json.stocks.map((stock, idx) => `
+                <tr>
+                  <td class="num rank">${idx + 1}</td>
+                  <td>
+                    <span class="stock-name">${stockCell(stock.name)}</span>
+                    <span class="stock-code">${stockCell(stock.code)}</span>
+                  </td>
+                  <td class="num">${stockCell(stock.closePrice)}</td>
+                  <td class="num ${rateClass(stock.changeRate)}">${formatRate(stock.changeRate)}</td>
+                  <td class="stock-info">${stockCell(stock.importantInfo)}</td>
+                  <td class="num">${stockCell(stock.marketCap)}</td>
+                  <td class="num">${stockCell(stock.per)}</td>
+                  <td class="num">${stockCell(stock.pbr)}</td>
+                  <td class="num">${stockCell(stock.roe)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (error) {
+        body.innerHTML = '<div style="height:180px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:700;">종목 데이터를 불러오지 못했습니다.</div>';
+      }
     }
 
 
@@ -710,6 +827,11 @@
     }
 
     function setupChartControls(div, item) {
+      const stockBtn = div.querySelector('.stock-btn');
+      if (stockBtn) {
+        stockBtn.addEventListener('click', () => openSectorStocks(item));
+      }
+
       const btns = div.querySelectorAll('.tf-btn');
       const minInput = div.querySelector(`#min-${item.popupKey}`);
       btns.forEach(b => b.addEventListener('click', (e) => {
@@ -791,6 +913,7 @@
             </div>
             <div class="chart-controls">
               <div class="chart-tools">
+                <button class="btn stock-btn" data-key="${item.popupKey}">종목</button>
                 <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1d" style="background:var(--accent);color:#fff;">일봉</button>
                 <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1wk">주봉</button>
                 <button class="btn outline tf-btn" data-key="${item.popupKey}" data-tf="1mo">월봉</button>
@@ -894,6 +1017,10 @@
 
     renderSummary();
     renderSectorCharts();
+    document.getElementById('stockModalClose').addEventListener('click', closeStockModal);
+    document.getElementById('stockModal').addEventListener('click', (event) => {
+      if (event.target.id === 'stockModal') closeStockModal();
+    });
     if (location.protocol === 'file:') {
       document.getElementById('fileWarn').style.display = 'block';
     }

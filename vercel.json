@@ -4,11 +4,13 @@
     { "src": "index.html", "use": "@vercel/static" },
     { "src": "api/chart.js", "use": "@vercel/node" },
     { "src": "api/quote.js", "use": "@vercel/node" },
+    { "src": "api/sector-stocks.js", "use": "@vercel/node" },
     { "src": "api/stats.js", "use": "@vercel/node" }
   ],
   "routes": [
     { "src": "/api/chart", "dest": "/api/chart.js" },
     { "src": "/api/quote", "dest": "/api/quote.js" },
+    { "src": "/api/sector-stocks", "dest": "/api/sector-stocks.js" },
     { "src": "/api/stats", "dest": "/api/stats.js" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]

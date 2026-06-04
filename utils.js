@@ -23,6 +23,7 @@ const chartMap = {
 
 const quoteCache = new Map();
 const sectorSeriesCache = new Map();
+const sectorStocksCache = new Map();
 
 const NAVER_HEADERS = {
   'User-Agent': 'Mozilla/5.0',
@@ -193,6 +194,12 @@ function naverNumber(value) {
   return Number(value.replace(/,/g, ''));
 }
 
+function compactNumber(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return NaN;
+  return Number(value.replace(/[,%\s]/g, ''));
+}
+
 function toNaverChartRows(priceInfos) {
   return (priceInfos || [])
     .map(x => {
@@ -309,6 +316,220 @@ function pickSectorStocks(stocks, limit = 6) {
     .filter(x => /^\d{6}$/.test(x.code))
     .sort((a, b) => b.weight - a.weight)
     .slice(0, limit);
+}
+
+function normalizeDaumStock(stock) {
+  const directCode = String(stock.symbolCode || stock.itemCode || '').replace(/^A/, '');
+  const krxCode = String(stock.code || '').match(/^KR7(\d{6})/)?.[1] || '';
+  const fallbackCode = String(stock.code || '').match(/\d{6}/)?.[0] || '';
+  const itemCode = /^\d{6}$/.test(directCode) ? directCode : (krxCode || fallbackCode);
+  return {
+    code: itemCode,
+    name: stock.name || stock.itemName || '',
+    closePrice: stock.tradePrice,
+    changeRate: typeof stock.changeRate === 'number' ? stock.changeRate * 100 : naverNumber(stock.changeRate),
+    marketCapValue: naverNumber(stock.marketCap),
+    marketCap: stock.marketCap,
+    tradingValue: stock.accTradePrice,
+    foreignRate: typeof stock.foreignRatio === 'number' ? stock.foreignRatio * 100 : naverNumber(stock.foreignRatio)
+  };
+}
+
+function normalizeNaverSectorStock(stock) {
+  const marketCap = naverNumber(stock.marketCap);
+  return {
+    code: String(stock.symbolCode || stock.itemCode || stock.code || '').replace(/^A/, ''),
+    name: stock.itemName || stock.name || '',
+    closePrice: stock.closePrice || stock.tradePrice,
+    changeRate: naverNumber(stock.changeRate),
+    marketCapValue: Number.isFinite(marketCap) ? marketCap * 1000000 : NaN,
+    marketCap: stock.marketCap,
+    tradingValue: stock.accumulatedTradingValue || stock.accTradePrice,
+    foreignRate: naverNumber(stock.foreignRate)
+  };
+}
+
+function parseNaverKpi200Rows(text) {
+  const rows = [];
+  const html = String(text || '');
+  const rowPattern = /<tr>([\s\S]*?)<\/tr>/g;
+  for (const match of html.matchAll(rowPattern)) {
+    const row = match[1];
+    const codeMatch = row.match(/code=(\d{6})[^>]*>([^<]+)<\/a>/);
+    if (!codeMatch) continue;
+    const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)]
+      .map(cell => cell[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    if (cells.length < 7) continue;
+    rows.push({
+      code: codeMatch[1],
+      name: codeMatch[2].trim(),
+      closePrice: cells[1],
+      changeRate: compactNumber(cells[3]),
+      tradingValue: compactNumber(cells[5]) * 1000000,
+      marketCapValue: compactNumber(cells[6]) * 100000000,
+      marketCap: cells[6]
+    });
+  }
+  return rows;
+}
+
+async function fetchKpi200Stocks(limit = 20) {
+  const pages = [1, 2, 3, 4, 5];
+  const htmlRows = await Promise.all(pages.map(async page => {
+    const url = `https://finance.naver.com/sise/entryJongmok.naver?type=KPI200&page=${page}`;
+    const r = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        'Accept': 'text/html,*/*',
+        'Referer': 'https://finance.naver.com/sise/sise_index.naver?code=KPI200'
+      }
+    });
+    const buffer = await r.arrayBuffer();
+    const text = new TextDecoder('euc-kr').decode(buffer);
+    return parseNaverKpi200Rows(text);
+  }));
+  return htmlRows
+    .flat()
+    .filter(stock => /^\d{6}$/.test(stock.code))
+    .sort((a, b) => (b.marketCapValue || 0) - (a.marketCapValue || 0))
+    .slice(0, limit);
+}
+
+async function fetchSectorStockCandidates(key, limit = 20) {
+  const def = sectorByKey.get(key);
+  if (!def) return null;
+
+  if (def.naverIndexCode === 'KPI200') {
+    return fetchKpi200Stocks(limit);
+  }
+
+  if (def.daumSectorCode) {
+    const sectors = await fetchDaumKospiSectors();
+    const sector = sectors.find(x => x.sectorCode === def.daumSectorCode);
+    return (sector?.includedStocks || [])
+      .map(normalizeDaumStock)
+      .filter(stock => /^\d{6}$/.test(stock.code))
+      .sort((a, b) => (b.marketCapValue || 0) - (a.marketCapValue || 0))
+      .slice(0, limit);
+  }
+
+  if (def.naverSectorName) {
+    const sector = await fetchNaverSectorByName(def.naverSectorName);
+    return (sector?.items || [])
+      .map(normalizeNaverSectorStock)
+      .filter(stock => /^\d{6}$/.test(stock.code))
+      .sort((a, b) => (b.marketCapValue || 0) - (a.marketCapValue || 0))
+      .slice(0, limit);
+  }
+
+  return null;
+}
+
+function infoValue(totalInfos, code) {
+  const found = totalInfos.find(item => item.code === code);
+  return found?.value || '';
+}
+
+function latestFinanceValue(rowList, title) {
+  const row = rowList.find(item => item.title === title);
+  if (!row?.columns) return '';
+  const keys = Object.keys(row.columns).sort().reverse();
+  const actualKey = keys.find(key => row.columns[key]?.value && row.columns[key].value !== '-');
+  return actualKey ? row.columns[actualKey].value : '';
+}
+
+async function fetchNaverStockDetails(stock) {
+  const code = stock.code;
+  const headers = { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' };
+
+  const [basic, integration, finance] = await Promise.all([
+    fetch(`https://m.stock.naver.com/api/stock/${code}/basic`, { headers }).then(r => r.json()).catch(() => null),
+    fetch(`https://m.stock.naver.com/api/stock/${code}/integration`, { headers }).then(r => r.json()).catch(() => null),
+    fetch(`https://m.stock.naver.com/api/stock/${code}/finance/annual`, { headers }).then(r => r.json()).catch(() => null)
+  ]);
+
+  const totalInfos = Array.isArray(integration?.totalInfos) ? integration.totalInfos : [];
+  const rowList = Array.isArray(finance?.financeInfo?.rowList) ? finance.financeInfo.rowList : [];
+  const roe = latestFinanceValue(rowList, 'ROE');
+  const foreignRate = infoValue(totalInfos, 'foreignRate') || (Number.isFinite(stock.foreignRate) ? `${stock.foreignRate.toFixed(2)}%` : '');
+  const high52 = infoValue(totalInfos, 'highPriceOf52Weeks');
+  const low52 = infoValue(totalInfos, 'lowPriceOf52Weeks');
+  const infoParts = [];
+  if (foreignRate) infoParts.push(`외인 ${foreignRate}`);
+  if (high52 && low52) infoParts.push(`52주 ${low52}~${high52}`);
+
+  return {
+    code,
+    name: basic?.stockName || integration?.stockName || stock.name || code,
+    closePrice: basic?.closePrice || stock.closePrice || '',
+    changeRate: basic?.fluctuationsRatio || stock.changeRate,
+    importantInfo: infoParts.join(' · ') || '-',
+    marketCap: infoValue(totalInfos, 'marketValue') || stock.marketCap || '',
+    marketCapValue: stock.marketCapValue || 0,
+    per: infoValue(totalInfos, 'per'),
+    pbr: infoValue(totalInfos, 'pbr'),
+    roe: roe ? `${roe}%` : '',
+    tradingValue: infoValue(totalInfos, 'accumulatedTradingValue') || stock.tradingValue || ''
+  };
+}
+
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+async function fetchSectorStocks(key, limit = 20) {
+  const cached = sectorStocksCache.get(key);
+  if (cached && Date.now() - cached.time < 5 * 60 * 1000) return cached.data;
+
+  const def = sectorByKey.get(key);
+  if (!def) return null;
+
+  const candidates = await fetchSectorStockCandidates(key, limit);
+  if (!candidates?.length) return null;
+
+  const stocks = await mapWithConcurrency(candidates, 5, async stock => {
+    try {
+      return await fetchNaverStockDetails(stock);
+    } catch (_) {
+      return {
+        code: stock.code,
+        name: stock.name || stock.code,
+        closePrice: stock.closePrice || '',
+        changeRate: stock.changeRate,
+        importantInfo: '-',
+        marketCap: stock.marketCap || '',
+        marketCapValue: stock.marketCapValue || 0,
+        per: '',
+        pbr: '',
+        roe: '',
+        tradingValue: stock.tradingValue || ''
+      };
+    }
+  });
+
+  const data = {
+    key,
+    name: def.name,
+    asOf: new Date().toISOString(),
+    stocks: stocks
+      .filter(stock => stock && /^\d{6}$/.test(stock.code))
+      .sort((a, b) => (b.marketCapValue || 0) - (a.marketCapValue || 0))
+      .slice(0, limit)
+  };
+
+  sectorStocksCache.set(key, { time: Date.now(), data });
+  return data;
 }
 
 function buildCompositeSeries(seriesList, targetLastClose) {
@@ -594,5 +815,6 @@ async function fetchChartSeries(key, interval = '1d') {
 module.exports = {
   fetchStooq,
   fetchChartSeries,
-  fallbackQuoteFromSeries
+  fallbackQuoteFromSeries,
+  fetchSectorStocks
 };
