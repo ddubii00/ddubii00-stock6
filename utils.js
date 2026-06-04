@@ -216,7 +216,41 @@ function toNaverChartRows(priceInfos) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+function parseNaverFchartRows(text) {
+  return [...String(text || '').matchAll(/<item data="([^"]+)"/g)]
+    .map(match => {
+      const [rawDate, rawOpen, rawHigh, rawLow, rawClose] = match[1].split('|');
+      if (!rawDate || rawDate.length < 8) return null;
+      const date = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`;
+      const open = Number(rawOpen);
+      const high = Number(rawHigh);
+      const low = Number(rawLow);
+      const close = Number(rawClose);
+      if (!Number.isFinite(close) || close <= 0) return null;
+      return {
+        date,
+        open: Number.isFinite(open) && open > 0 ? open : close,
+        high: Number.isFinite(high) && high > 0 ? high : close,
+        low: Number.isFinite(low) && low > 0 ? low : close,
+        close
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+async function fetchNaverFchartSeries(symbol, count = 1500) {
+  const url = `https://fchart.stock.naver.com/sise.nhn?symbol=${encodeURIComponent(symbol)}&timeframe=day&count=${count}&requestType=0`;
+  const r = await fetch(url, { headers: NAVER_HEADERS });
+  const text = await r.text();
+  const rows = parseNaverFchartRows(text);
+  return rows.length ? rows.slice(-count) : null;
+}
+
 async function fetchNaverIndexSeries(indexCode) {
+  const fchartRows = await fetchNaverFchartSeries(indexCode).catch(() => null);
+  if (fchartRows) return fchartRows;
+
   const url = `https://api.stock.naver.com/chart/domestic/index/${encodeURIComponent(indexCode)}?periodType=dayCandle`;
   const r = await fetch(url, { headers: NAVER_HEADERS });
   const json = await r.json();
@@ -227,6 +261,10 @@ async function fetchNaverIndexSeries(indexCode) {
 async function fetchNaverItemSeries(itemCode) {
   const code = String(itemCode || '').replace(/^A/, '');
   if (!/^\d{6}$/.test(code)) return null;
+
+  const fchartRows = await fetchNaverFchartSeries(code).catch(() => null);
+  if (fchartRows) return fchartRows;
+
   const url = `https://api.stock.naver.com/chart/domestic/item/${code}?periodType=dayCandle`;
   const r = await fetch(url, { headers: NAVER_HEADERS });
   const json = await r.json();
